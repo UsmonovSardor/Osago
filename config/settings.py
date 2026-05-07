@@ -6,12 +6,22 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = config("DEBUG", default=False, cast=bool)
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,0.0.0.0").split(",")
+
+ALLOWED_HOSTS = config(
+    "ALLOWED_HOSTS",
+    default="localhost,127.0.0.1,0.0.0.0,.railway.app"
+).split(",")
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.railway.app",
+    "https://osago-production.up.railway.app",
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -20,7 +30,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third-party
+
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
@@ -28,7 +38,7 @@ INSTALLED_APPS = [
     "django_filters",
     "drf_spectacular",
     "django_celery_beat",
-    # Local apps
+
     "apps.accounts",
     "apps.policies",
     "apps.payments",
@@ -39,6 +49,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -67,20 +78,30 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# ── Database ──────────────────────────────────────────────────────────────────
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="kafil_osago"),
-        "USER": config("DB_USER", default="postgres"),
-        "PASSWORD": config("DB_PASSWORD", default="postgres"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432"),
-        "CONN_MAX_AGE": 60,
-    }
-}
+# Database
+DATABASE_URL = config("DATABASE_URL", default="")
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=False,
+        )
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("DB_NAME", default="kafil_osago"),
+            "USER": config("DB_USER", default="postgres"),
+            "PASSWORD": config("DB_PASSWORD", default="postgres"),
+            "HOST": config("DB_HOST", default="localhost"),
+            "PORT": config("DB_PORT", default="5432"),
+            "CONN_MAX_AGE": 60,
+        }
+    }
+
 AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -90,7 +111,6 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# ── REST Framework ────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -113,11 +133,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "20/minute",
         "user": "100/minute",
-        "sms": "3/minute",  # SMS spam himoyasi
+        "sms": "3/minute",
     },
 }
 
-# ── JWT ───────────────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(
         minutes=config("JWT_ACCESS_TOKEN_LIFETIME_MINUTES", default=60, cast=int)
@@ -135,7 +154,7 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
-# ── Redis & Cache ─────────────────────────────────────────────────────────────
+# Redis
 REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
 
 CACHES = {
@@ -152,8 +171,7 @@ CACHES = {
     }
 }
 
-# ── Celery ────────────────────────────────────────────────────────────────────
-CELERY_BROKER_URL = config("CELERY_BROKER_URL", default="redis://localhost:6379/1")
+CELERY_BROKER_URL = config("CELERY_BROKER_URL", default=REDIS_URL)
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
@@ -162,17 +180,22 @@ CELERY_TIMEZONE = "Asia/Tashkent"
 
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
-CORS_ALLOWED_ORIGINS = [FRONTEND_URL]
+CORS_ALLOWED_ORIGINS = [
+    FRONTEND_URL,
+    "https://osago-production.up.railway.app",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 
-# ── Static & Media ────────────────────────────────────────────────────────────
+# Static & Media
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# ── Internationalization ──────────────────────────────────────────────────────
 LANGUAGE_CODE = "uz"
 TIME_ZONE = "Asia/Tashkent"
 USE_I18N = True
@@ -180,21 +203,21 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# ── SMS (Eskiz.uz) ────────────────────────────────────────────────────────────
+# SMS
 ESKIZ_EMAIL = config("ESKIZ_EMAIL", default="")
 ESKIZ_PASSWORD = config("ESKIZ_PASSWORD", default="")
 ESKIZ_BASE_URL = config("ESKIZ_BASE_URL", default="https://notify.eskiz.uz/api")
 SMS_OTP_EXPIRE_MINUTES = 5
 SMS_OTP_MAX_ATTEMPTS = 3
 
-# ── OSAGO Tashqi API ──────────────────────────────────────────────────────────
+# OSAGO API
 OSAGO_API_BASE_URL = config("OSAGO_API_BASE_URL", default="")
 OSAGO_API_KEY = config("OSAGO_API_KEY", default="")
 OSAGO_API_SECRET = config("OSAGO_API_SECRET", default="")
-OSAGO_CACHE_TIMEOUT = 600  # 10 daqiqa (Redis)
+OSAGO_CACHE_TIMEOUT = 600
 OSAGO_DEMO_MODE = config("OSAGO_DEMO_MODE", default=True, cast=bool)
 
-# ── To'lov tizimlari ──────────────────────────────────────────────────────────
+# Payments
 CLICK_SERVICE_ID = config("CLICK_SERVICE_ID", default="")
 CLICK_MERCHANT_ID = config("CLICK_MERCHANT_ID", default="")
 CLICK_SECRET_KEY = config("CLICK_SECRET_KEY", default="")
@@ -206,7 +229,6 @@ PAYME_BASE_URL = "https://checkout.paycom.uz/api"
 UZUM_MERCHANT_ID = config("UZUM_MERCHANT_ID", default="")
 UZUM_SECRET_KEY = config("UZUM_SECRET_KEY", default="")
 
-# ── API Docs (Swagger) ────────────────────────────────────────────────────────
 SPECTACULAR_SETTINGS = {
     "TITLE": "KAFIL-SUG'URTA OSAGO API",
     "DESCRIPTION": "OSAGO sug'urta mahsuloti bo'yicha REST API",
